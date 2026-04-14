@@ -67,7 +67,7 @@ app.MapGet("/", async (IHttpClientFactory httpFactory, Client client, IOptions<R
             }
         }
 
-        var itemsToPublish = feeds.Where(x=>x.Item.PublishDate > lastPublished).OrderBy(x => x.Item.PublishDate);
+        var itemsToPublish = feeds.Where(x => x.Item.PublishDate > lastPublished).OrderBy(x => x.Item.PublishDate);
 
         await client.LoginUserIfNeeded();
         var chats = await client.Messages_GetAllChats();
@@ -76,9 +76,9 @@ app.MapGet("/", async (IHttpClientFactory httpFactory, Client client, IOptions<R
         {
             await client.SendMessageAsync(chat, item.Item.Title + Environment.NewLine + item.Item.Summary + Environment.NewLine + item.Item.Uri);
         }
-
-        lastPublished = DateTimeOffset.UtcNow;
     }
+
+    lastPublished = DateTimeOffset.UtcNow;
 });
 
 app.MapPost("/telegram/otp", (TelegramAuthModel code) =>
@@ -94,6 +94,7 @@ app.MapPost("/telegram/password", (TelegramAuthModel code) =>
 app.Run();
 
 public record FeedItemExtended(string Feed, FeedItem Item);
+
 public class RssConfig
 {
     public long TelegramChannelId { get; set; }
