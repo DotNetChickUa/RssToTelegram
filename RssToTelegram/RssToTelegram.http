@@ -1,0 +1,6 @@
+@RssToTelegram_HostAddress = http://localhost:5287
+
+GET {{RssToTelegram_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
