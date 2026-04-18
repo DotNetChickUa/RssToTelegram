@@ -14,6 +14,8 @@ sealed class TelegramSessionDbContext(DbContextOptions<TelegramSessionDbContext>
             entity.Property(x => x.AppId).IsRequired();
             entity.Property(x => x.AppHash).IsRequired();
             entity.Property(x => x.Phone).IsRequired();
+            entity.Property(x => x.OtpCode);
+            entity.Property(x => x.Password);
             entity.Property(x => x.CreatedAtUtc).IsRequired();
         });
     }

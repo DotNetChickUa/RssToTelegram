@@ -1,0 +1,1 @@
+sealed record TelegramSessionSettings(string AppId, string AppHash, string Phone);
