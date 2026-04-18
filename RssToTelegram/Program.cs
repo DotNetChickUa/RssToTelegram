@@ -67,6 +67,8 @@ app.MapPost("/", async (PublishRequest request, IHttpClientFactory httpFactory, 
         }
     }
 
+    session.Dispose();
+
     sessionStore.TrySetLastPublishedAtUtc(request.Token, DateTimeOffset.UtcNow);
     return Results.Ok();
 });
@@ -86,6 +88,7 @@ app.MapPost("/telegram/signin/{token}", async (string token, TelegramSessionStor
 
     var client = session.GetClient();
     await client.LoginUserIfNeeded();
+    session.Dispose();
     return Results.Ok();
 });
 

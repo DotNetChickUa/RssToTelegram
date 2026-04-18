@@ -1,6 +1,6 @@
 using WTelegram;
 
-sealed class TelegramSignInSession
+sealed class TelegramSignInSession : IDisposable
 {
     private readonly TelegramSessionSettings _settings;
     private readonly string _token;
@@ -53,6 +53,15 @@ sealed class TelegramSignInSession
             }
 
             Thread.Sleep(250);
+        }
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        if (_client.IsValueCreated)
+        {
+            _client.Value.Dispose();
         }
     }
 }
