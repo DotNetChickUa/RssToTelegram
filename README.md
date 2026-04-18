@@ -41,9 +41,9 @@ Existing channels:
     }
     ```
 
-- Publish RSS to Telegram:
+- Setup RSS to Telegram:
      
-     POST https://localhost:7091/
+     POST https://localhost:7091/telegram/config
      ```json
      {
         "Token": "YOUR_TOKEN_FROM_SIGNIN_RESPONSE",
@@ -57,5 +57,14 @@ Existing channels:
             "TelegramChannelId": "Telegram channel Id 2"
           }
         ]
+    }
+     ```
+
+- Publish RSS to Telegram:
+     
+     POST https://localhost:7091/
+     ```json
+     {
+        "Token": "YOUR_TOKEN_FROM_SIGNIN_RESPONSE"
     }
      ```

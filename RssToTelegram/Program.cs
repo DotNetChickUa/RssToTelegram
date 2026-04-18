@@ -6,7 +6,6 @@ Directory.CreateDirectory(Path.Combine(AppContext.BaseDirectory, "telegram-sessi
 
 var databasePath = Path.Combine(AppContext.BaseDirectory, "telegram-sessions.db");
 
-var lastPublished = DateTimeOffset.MinValue;
 builder.Services.AddHttpClient("RssReader", client =>
 {
     client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0");
@@ -36,15 +35,16 @@ app.MapPost("/", async (PublishRequest request, IHttpClientFactory httpFactory, 
         return Results.Unauthorized();
     }
 
-    if (request.Configs.Count == 0)
+    if (!sessionStore.TryGetRssConfigs(request.Token, out var configs))
     {
         return Results.BadRequest("At least one RSS config is required.");
     }
 
+    var lastPublished = sessionStore.GetLastPublishedAtUtc(request.Token) ?? DateTimeOffset.MinValue;
     var client = session.GetClient();
 
     var reader = new FeedReader(httpFactory.CreateClient("RssReader"));
-    foreach (var config in request.Configs)
+    foreach (var config in configs)
     {
         var feeds = new List<FeedItemExtended>();
         foreach (var feed in config.Feeds)
@@ -67,12 +67,12 @@ app.MapPost("/", async (PublishRequest request, IHttpClientFactory httpFactory, 
         }
     }
 
-    lastPublished = DateTimeOffset.UtcNow;
+    sessionStore.TrySetLastPublishedAtUtc(request.Token, DateTimeOffset.UtcNow);
     return Results.Ok();
 });
 
 app.MapPost("/telegram/signin", (TelegramSessionStore sessionStore, TelegramSigninRequest request) =>
-{
+{ 
     var token = sessionStore.CreateSession(new TelegramSessionSettings(request.AppId, request.AppHash, request.Phone));
     return Results.Ok(new TelegramSigninResponse { Token = token });
 });
@@ -87,6 +87,21 @@ app.MapPost("/telegram/signin/{token}", async (string token, TelegramSessionStor
     var client = session.GetClient();
     await client.LoginUserIfNeeded();
     return Results.Ok();
+});
+
+app.MapPost("/telegram/config", (TelegramSessionStore sessionStore, TelegramConfigRequest request) =>
+{
+    if (request.Configs.Count == 0)
+    {
+        return Results.BadRequest("At least one RSS config is required.");
+    }
+
+    if (!sessionStore.TrySetRssConfigs(request.Token, request.Configs))
+    {
+        return Results.Unauthorized();
+    }
+
+    return Results.Accepted();
 });
 
 app.MapPost("/telegram/otp", (TelegramSessionStore sessionStore, TelegramAuthModel authModel) =>
