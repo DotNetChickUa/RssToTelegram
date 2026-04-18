@@ -1,61 +1,50 @@
-using Microsoft.Extensions.Options;
+using Microsoft.EntityFrameworkCore;
 using SimpleFeedReader;
-using WTelegram;
-
-string? _password = null;
-string? _otp = null;
 
 var builder = WebApplication.CreateBuilder(args);
+Directory.CreateDirectory(Path.Combine(AppContext.BaseDirectory, "telegram-sessions"));
+
+var databasePath = Path.Combine(AppContext.BaseDirectory, "telegram-sessions.db");
+
 var lastPublished = DateTimeOffset.MinValue;
 builder.Services.AddHttpClient("RssReader", client =>
 {
     client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0");
 });
-builder.Services.AddSingleton<Client>(sp =>
+
+builder.Services.AddDbContextFactory<TelegramSessionDbContext>(options =>
 {
-    var telegram = builder.Configuration.GetSection("Telegram").Get<TelegramSettings>();
-
-    string ConfigProvider(string what)
-    {
-        switch (what)
-        {
-            case "api_id":
-                return telegram.AppId;
-            case "api_hash":
-                return telegram.AppHash;
-            case "phone_number":
-                return telegram.Phone;
-            case "session_pathname":
-                return Path.Combine(AppContext.BaseDirectory, "telegram.session");
-            case "verification_code":
-                while (_otp == null)
-                    Thread.Sleep(1000);
-
-                return _otp;
-            case "password":
-                while (_password == null)
-                    Thread.Sleep(1000);
-
-                return _password;
-            default:
-                return null;
-        }
-    }
-
-    var client = new Client(ConfigProvider);
-    return client;
+    options.UseSqlite($"Data Source={databasePath}");
 });
-
-builder.Services.Configure<RssTelegramConfiguration>(builder.Configuration.GetSection("RssTelegramConfiguration"));
+builder.Services.AddSingleton<TelegramSessionStore>();
 
 var app = builder.Build();
 
+using (var scope = app.Services.CreateScope())
+{
+    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TelegramSessionDbContext>>();
+    using var dbContext = dbFactory.CreateDbContext();
+    dbContext.Database.EnsureCreated();
+}
+
 app.UseHttpsRedirection();
 
-app.MapGet("/", async (IHttpClientFactory httpFactory, Client client, IOptions<RssTelegramConfiguration> options) =>
+app.MapPost("/", async (PublishRequest request, IHttpClientFactory httpFactory, TelegramSessionStore sessionStore) =>
 {
+    if (!sessionStore.TryGetSession(request.Token, out var session))
+    {
+        return Results.Unauthorized();
+    }
+
+    if (request.Configs.Count == 0)
+    {
+        return Results.BadRequest("At least one RSS config is required.");
+    }
+
+    var client = session.GetClient();
+
     var reader = new FeedReader(httpFactory.CreateClient("RssReader"));
-    foreach (var config in options.Value.Configs)
+    foreach (var config in request.Configs)
     {
         var feeds = new List<FeedItemExtended>();
         foreach (var feed in config.Feeds)
@@ -79,41 +68,45 @@ app.MapGet("/", async (IHttpClientFactory httpFactory, Client client, IOptions<R
     }
 
     lastPublished = DateTimeOffset.UtcNow;
+    return Results.Ok();
 });
 
-app.MapPost("/telegram/otp", (TelegramAuthModel code) =>
+app.MapPost("/telegram/signin", (TelegramSessionStore sessionStore, TelegramSigninRequest request) =>
 {
-    _otp = code.Code;
+    var token = sessionStore.CreateSession(new TelegramSessionSettings(request.AppId, request.AppHash, request.Phone));
+    return Results.Ok(new TelegramSigninResponse { Token = token });
 });
 
-app.MapPost("/telegram/password", (TelegramAuthModel code) =>
+app.MapPost("/telegram/signin/{token}", async (string token, TelegramSessionStore sessionStore) =>
 {
-    _password = code.Code;
+    if (!sessionStore.TryGetSession(token, out var session))
+    {
+        return Results.Unauthorized();
+    }
+
+    var client = session.GetClient();
+    await client.LoginUserIfNeeded();
+    return Results.Ok();
+});
+
+app.MapPost("/telegram/otp", (TelegramSessionStore sessionStore, TelegramAuthModel authModel) =>
+{
+    if (!sessionStore.TrySetOtp(authModel.Token, authModel.Code))
+    {
+        return Results.Unauthorized();
+    }
+
+    return Results.Accepted();
+});
+
+app.MapPost("/telegram/password", (TelegramSessionStore sessionStore, TelegramAuthModel authModel) =>
+{
+    if (!sessionStore.TrySetPassword(authModel.Token, authModel.Code))
+    {
+        return Results.Unauthorized();
+    }
+
+    return Results.Accepted();
 });
 
 app.Run();
-
-public record FeedItemExtended(string Feed, FeedItem Item);
-
-public class RssConfig
-{
-    public long TelegramChannelId { get; set; }
-    public string[] Feeds { get; set; } = [];
-}
-
-public class RssTelegramConfiguration
-{
-    public List<RssConfig> Configs { get; set; } = [];
-}
-public class TelegramSettings
-{
-    public required string AppId { get; set; }
-    public required string AppHash { get; set; }
-    public required string Phone { get; set; }
-}
-
-
-public class TelegramAuthModel
-{
-    public required string Code { get; set; }
-}
